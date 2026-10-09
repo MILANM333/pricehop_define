@@ -112,5 +112,49 @@
       });
     }
   </script>
+  <script>
+    // PriceHop Extension Bridge for Flutter Web
+    window.pricehopExtensionReady = false;
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'PRICEHOP_EXT_READY') {
+        window.pricehopExtensionReady = true;
+      }
+    });
+
+    window.pricehopExtensionScrape = function(query, platform, offset, limit) {
+      return new Promise(function(resolve, reject) {
+        if (!window.pricehopExtensionReady) {
+          return resolve(null);
+        }
+        var id = 'req_' + Math.random().toString(36).substring(2) + '_' + Date.now();
+        var timeoutTimer = setTimeout(function() {
+          window.removeEventListener('message', handler);
+          resolve(null);
+        }, 12000);
+
+        function handler(e) {
+          if (e.data && e.data.type === 'PRICEHOP_RESULT' && e.data.id === id) {
+            clearTimeout(timeoutTimer);
+            window.removeEventListener('message', handler);
+            if (e.data.success && e.data.products && e.data.products.length > 0) {
+              resolve(JSON.stringify(e.data.products));
+            } else {
+              resolve(null);
+            }
+          }
+        }
+
+        window.addEventListener('message', handler);
+        window.postMessage({
+          type: 'PRICEHOP_SEARCH',
+          id: id,
+          query: query,
+          platform: platform || 'myntra',
+          offset: offset || 0,
+          limit: limit || 50
+        }, '*');
+      });
+    };
+  </script>
   <script src="flutter_bootstrap.js" async=""></script>
 </body></html>
