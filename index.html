@@ -113,48 +113,46 @@
     }
   </script>
   <script>
-    // PriceHop Extension Bridge for Flutter Web
-    window.pricehopExtensionReady = false;
-    window.addEventListener('message', function(e) {
-      if (e.data && e.data.type === 'PRICEHOP_EXT_READY') {
-        window.pricehopExtensionReady = true;
-      }
-    });
-
-    window.pricehopExtensionScrape = function(query, platform, offset, limit) {
-      return new Promise(function(resolve, reject) {
-        if (!window.pricehopExtensionReady) {
-          return resolve(null);
-        }
-        var id = 'req_' + Math.random().toString(36).substring(2) + '_' + Date.now();
-        var timeoutTimer = setTimeout(function() {
-          window.removeEventListener('message', handler);
-          resolve(null);
-        }, 12000);
-
-        function handler(e) {
-          if (e.data && e.data.type === 'PRICEHOP_RESULT' && e.data.id === id) {
-            clearTimeout(timeoutTimer);
-            window.removeEventListener('message', handler);
-            if (e.data.success && e.data.products && e.data.products.length > 0) {
-              resolve(JSON.stringify(e.data.products));
-            } else {
-              resolve(null);
+    // PriceHop Extension Bridge for Flutter Web.
+    // The extension hosts hidden "scraper tabs" that stand in for the mobile
+    // app's HeadlessInAppWebView. Payloads cross into Dart as JSON strings.
+    window.pricehopExt = (function () {
+      var pending = {};
+      var api = {
+        available: function () {
+          return document.documentElement.hasAttribute('data-pricehop-ext');
+        },
+        // Set from Dart: receives each scraper-tab event as a JSON string.
+        onEvent: null,
+        call: function (method, paramsJson, timeoutMs) {
+          return new Promise(function (resolve) {
+            if (!api.available()) {
+              return resolve(JSON.stringify({ ok: false, error: 'Extension not installed' }));
             }
-          }
+            var id = 'rpc_' + Math.random().toString(36).substring(2) + '_' + Date.now();
+            pending[id] = resolve;
+            setTimeout(function () {
+              if (pending[id]) {
+                delete pending[id];
+                resolve(JSON.stringify({ ok: false, error: 'Timed out' }));
+              }
+            }, timeoutMs || 15000);
+            window.postMessage({ type: 'PRICEHOP_RPC', id: id, method: method, params: JSON.parse(paramsJson) }, '*');
+          });
         }
-
-        window.addEventListener('message', handler);
-        window.postMessage({
-          type: 'PRICEHOP_SEARCH',
-          id: id,
-          query: query,
-          platform: platform || 'myntra',
-          offset: offset || 0,
-          limit: limit || 50
-        }, '*');
+      };
+      window.addEventListener('message', function (e) {
+        if (e.source !== window || !e.data) return;
+        if (e.data.type === 'PRICEHOP_RPC_RESULT' && pending[e.data.id]) {
+          var resolve = pending[e.data.id];
+          delete pending[e.data.id];
+          resolve(JSON.stringify({ ok: e.data.ok, result: e.data.result, error: e.data.error }));
+        } else if (e.data.type === 'PRICEHOP_TAB_EVENT' && api.onEvent) {
+          api.onEvent(JSON.stringify(e.data));
+        }
       });
-    };
+      return api;
+    })();
   </script>
   <script src="flutter_bootstrap.js" async=""></script>
 </body></html>
