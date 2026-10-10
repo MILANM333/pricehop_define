@@ -12,7 +12,7 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="$FLUTTER_BASE_HREF">
+  <base href="/pricehop_define/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
@@ -102,7 +102,57 @@
       <source srcset="splash/img/dark-1x.png 1x, splash/img/dark-2x.png 2x, splash/img/dark-3x.png 3x, splash/img/dark-4x.png 4x" media="(prefers-color-scheme: dark)">
       <img class="center" aria-hidden="true" src="splash/img/light-1x.png" alt="">
   </picture>
+  <script>
+    // Ensure browsers do not hold stale cached bundles on GitHub Pages
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+  </script>
+  <script>
+    // PriceHop Extension Bridge for Flutter Web.
+    // The extension hosts hidden "scraper tabs" that stand in for the mobile
+    // app's HeadlessInAppWebView. Payloads cross into Dart as JSON strings.
+    window.pricehopExt = (function () {
+      var pending = {};
+      var api = {
+        available: function () {
+          return document.documentElement.hasAttribute('data-pricehop-ext');
+        },
+        // Set from Dart: receives each scraper-tab event as a JSON string.
+        onEvent: null,
+        call: function (method, paramsJson, timeoutMs) {
+          return new Promise(function (resolve) {
+            if (!api.available()) {
+              return resolve(JSON.stringify({ ok: false, error: 'Extension not installed' }));
+            }
+            var id = 'rpc_' + Math.random().toString(36).substring(2) + '_' + Date.now();
+            pending[id] = resolve;
+            setTimeout(function () {
+              if (pending[id]) {
+                delete pending[id];
+                resolve(JSON.stringify({ ok: false, error: 'Timed out' }));
+              }
+            }, timeoutMs || 15000);
+            window.postMessage({ type: 'PRICEHOP_RPC', id: id, method: method, params: JSON.parse(paramsJson) }, '*');
+          });
+        }
+      };
+      window.addEventListener('message', function (e) {
+        if (e.source !== window || !e.data) return;
+        if (e.data.type === 'PRICEHOP_RPC_RESULT' && pending[e.data.id]) {
+          var resolve = pending[e.data.id];
+          delete pending[e.data.id];
+          resolve(JSON.stringify({ ok: e.data.ok, result: e.data.result, error: e.data.error }));
+        } else if (e.data.type === 'PRICEHOP_TAB_EVENT' && api.onEvent) {
+          api.onEvent(JSON.stringify(e.data));
+        }
+      });
+      return api;
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async=""></script>
-
-
 </body></html>
